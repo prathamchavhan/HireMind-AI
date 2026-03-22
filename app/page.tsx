@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import {
     Chart as ChartJS,
     CategoryScale,
@@ -11,9 +11,11 @@ import {
     LineElement,
     Tooltip,
     Filler,
+    ChartData,
+    ChartOptions
 } from 'chart.js'
 import { Line } from 'react-chartjs-2'
-import { ArrowRight, Activity, Code2, Database, LayoutTemplate, Briefcase } from 'lucide-react'
+import { ArrowRight, Activity, Code2, Database, LayoutTemplate, Briefcase, LucideIcon } from 'lucide-react'
 
 ChartJS.register(
     CategoryScale,
@@ -24,7 +26,14 @@ ChartJS.register(
     Filler
 )
 
-const roles = [
+interface Role {
+    id: string;
+    title: string;
+    icon: LucideIcon;
+    desc: string;
+}
+
+const roles: Role[] = [
     { id: 'python-developer', title: 'Python Developer', icon: Code2, desc: 'Backend & Algorithms' },
     { id: 'react-developer', title: 'React Developer', icon: LayoutTemplate, desc: 'Frontend & UI' },
     { id: 'data-analyst', title: 'Data Analyst', icon: Database, desc: 'Analytics & SQL' },
@@ -32,10 +41,10 @@ const roles = [
 
 export default function HomePage() {
     const router = useRouter()
-    const [selectedRole, setSelectedRole] = useState(null)
-    const [customRole, setCustomRole] = useState('')
-    const [loading, setLoading] = useState(false)
-    const [mounted, setMounted] = useState(false)
+    const [selectedRole, setSelectedRole] = useState<Role | null>(null)
+    const [customRole, setCustomRole] = useState<string>('')
+    const [loading, setLoading] = useState<boolean>(false)
+    const [mounted, setMounted] = useState<boolean>(false)
 
     useEffect(() => {
         setMounted(true)
@@ -54,7 +63,7 @@ export default function HomePage() {
     const canStart = Boolean(selectedRole || customRole.trim())
 
     // Config for the display chart
-    const chartData = {
+    const chartData: ChartData<'line'> = {
         labels: ['Q1', 'Q2', 'Q3', 'Q4', 'Q5'],
         datasets: [
             {
@@ -71,7 +80,7 @@ export default function HomePage() {
         ],
     }
 
-    const chartOptions = {
+    const chartOptions: ChartOptions<'line'> = {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
@@ -88,7 +97,8 @@ export default function HomePage() {
         scales: {
             y: { display: false, min: 0, max: 100 },
             x: {
-                grid: { display: false, drawBorder: false },
+                border: { display: false },
+                grid: { display: false },
                 ticks: { color: 'rgba(255,255,255,0.5)', font: { size: 12 } },
             },
         },

@@ -10,13 +10,15 @@ import {
     LineElement,
     Filler,
     Tooltip,
+    ChartData,
+    ChartOptions
 } from 'chart.js'
 import { Radar } from 'react-chartjs-2'
 import { ArrowLeft, RotateCcw, Activity } from 'lucide-react'
 
 ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip)
 
-function ScoreCircle({ score, max = 100 }) {
+function ScoreCircle({ score, max = 100 }: { score: number, max?: number }) {
     const radius = 54
     const circumference = 2 * Math.PI * radius
     const pct = Math.min(score / max, 1)
@@ -52,7 +54,7 @@ function ResultContent() {
     const roleTitle = searchParams.get('roleTitle') || 'Candidate'
     const role = searchParams.get('role') || 'candidate'
 
-    let scores = [], feedbacks = [], questions = [], answers = []
+    let scores: number[] = [], feedbacks: string[] = [], questions: string[] = [], answers: string[] = []
     try {
         scores = JSON.parse(decodeURIComponent(searchParams.get('scores') || '[]'))
         feedbacks = JSON.parse(decodeURIComponent(searchParams.get('feedback') || '[]'))
@@ -78,37 +80,40 @@ function ResultContent() {
 
         if (scores.length === 0) dataPts = [0, 0, 0, 0, 0]
 
-        return {
-            chartData: {
-                labels,
-                datasets: [
-                    {
-                        label: 'Candidate Competency',
-                        data: dataPts,
-                        backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                        borderColor: '#fff',
-                        borderWidth: 1.5,
-                        pointBackgroundColor: '#000',
-                        pointBorderColor: '#fff',
-                        pointHoverBackgroundColor: '#fff',
-                        pointHoverBorderColor: '#000',
-                    },
-                ],
-            },
-            chartOptions: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    r: {
-                        angleLines: { color: 'rgba(255, 255, 255, 0.1)' },
-                        grid: { color: 'rgba(255, 255, 255, 0.1)' },
-                        pointLabels: { color: 'rgba(255, 255, 255, 0.5)', font: { size: 10, family: 'sans-serif' } },
-                        ticks: { display: false, min: 0, max: 100 }
-                    }
+        const cData: ChartData<'radar'> = {
+            labels,
+            datasets: [
+                {
+                    label: 'Candidate Competency',
+                    data: dataPts,
+                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                    borderColor: '#fff',
+                    borderWidth: 1.5,
+                    pointBackgroundColor: '#000',
+                    pointBorderColor: '#fff',
+                    pointHoverBackgroundColor: '#fff',
+                    pointHoverBorderColor: '#000',
                 },
-                plugins: { legend: { display: false } }
-            }
-        }
+            ],
+        };
+
+        const cOptions: ChartOptions<'radar'> = {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                r: {
+                    min: 0,
+                    max: 100,
+                    angleLines: { color: 'rgba(255, 255, 255, 0.1)' },
+                    grid: { color: 'rgba(255, 255, 255, 0.1)' },
+                    pointLabels: { color: 'rgba(255, 255, 255, 0.5)', font: { size: 10, family: 'sans-serif' } },
+                    ticks: { display: false }
+                }
+            },
+            plugins: { legend: { display: false } }
+        };
+
+        return { chartData: cData, chartOptions: cOptions };
     }, [scores])
 
     return (

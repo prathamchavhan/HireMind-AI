@@ -1,15 +1,16 @@
 import { Inter } from 'next/font/google'
+import type { Metadata } from 'next'
 import './globals.css'
 
 const inter = Inter({ subsets: ['latin'] })
 
-export const metadata = {
+export const metadata: Metadata = {
     title: 'HireMind AI – Smart AI-Powered HR Interviews',
     description: 'Experience real-time AI-driven interviews with voice questions, speech recognition, and instant feedback powered by Gemini and Groq.',
     keywords: 'AI interview, HR interview, technical interview, speech recognition, Gemini AI',
 }
 
-export default function RootLayout({ children }) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
     return (
         <html lang="en" className="dark">
             <head>

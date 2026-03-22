@@ -4,10 +4,10 @@ import { useState, useEffect, useRef, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createInterview, updateInterview, completeInterview } from '@/lib/firestore'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Mic, Square, Volume2, VolumeX, ArrowRight, SkipForward } from 'lucide-react'
+import { Mic, Square, Volume2, VolumeX, ArrowRight, SkipForward, ArrowLeft } from 'lucide-react'
 
 // ─── Audio Wave Visualizer ───────────────────────────────────────────────────
-function AudioWave({ isRecording }) {
+function AudioWave({ isRecording }: { isRecording: boolean }) {
     const bars = 16
     return (
         <div className="flex items-center justify-center gap-[2px] h-10">
@@ -33,29 +33,29 @@ function InterviewContent() {
     const role = searchParams.get('role') || 'candidate'
     const roleTitle = searchParams.get('roleTitle') || 'Candidate'
 
-    const [questions, setQuestions] = useState([])
-    const [currentIdx, setCurrentIdx] = useState(0)
-    const [answers, setAnswers] = useState([])
-    const [scores, setScores] = useState([])
-    const [feedbacks, setFeedbacks] = useState([])
-    const [transcript, setTranscript] = useState('')
-    const [isRecording, setIsRecording] = useState(false)
-    const [isPlayingAudio, setIsPlayingAudio] = useState(false)
-    const [isTranscribing, setIsTranscribing] = useState(false)
-    const [isEvaluating, setIsEvaluating] = useState(false)
-    const [isSaving, setIsSaving] = useState(false)
-    const [status, setStatus] = useState('loading')
-    const [interviewId, setInterviewId] = useState(null)
-    const [error, setError] = useState(null)
-    const [audioEnabled, setAudioEnabled] = useState(true)
-    const [timeLeft, setTimeLeft] = useState(600)
+    const [questions, setQuestions] = useState<string[]>([])
+    const [currentIdx, setCurrentIdx] = useState<number>(0)
+    const [answers, setAnswers] = useState<string[]>([])
+    const [scores, setScores] = useState<number[]>([])
+    const [feedbacks, setFeedbacks] = useState<string[]>([])
+    const [transcript, setTranscript] = useState<string>('')
+    const [isRecording, setIsRecording] = useState<boolean>(false)
+    const [isPlayingAudio, setIsPlayingAudio] = useState<boolean>(false)
+    const [isTranscribing, setIsTranscribing] = useState<boolean>(false)
+    const [isEvaluating, setIsEvaluating] = useState<boolean>(false)
+    const [isSaving, setIsSaving] = useState<boolean>(false)
+    const [status, setStatus] = useState<'loading' | 'ready' | 'recording' | 'transcribing' | 'evaluating' | 'done' | 'error'>('loading')
+    const [interviewId, setInterviewId] = useState<string | null>(null)
+    const [error, setError] = useState<string | null>(null)
+    const [audioEnabled, setAudioEnabled] = useState<boolean>(true)
+    const [timeLeft, setTimeLeft] = useState<number>(600)
 
-    const mediaRecorderRef = useRef(null)
-    const audioChunksRef = useRef([])
-    const videoRef = useRef(null)
-    const streamRef = useRef(null)
-    const userVideoRef = useRef(null)
-    const userStreamRef = useRef(null)
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+    const audioChunksRef = useRef<Blob[]>([])
+    const videoRef = useRef<HTMLVideoElement>(null)
+    const streamRef = useRef<MediaStream | null>(null)
+    const userVideoRef = useRef<HTMLVideoElement>(null)
+    const userStreamRef = useRef<MediaStream | null>(null)
 
     const currentQuestion = questions[currentIdx]
 
@@ -65,7 +65,7 @@ function InterviewContent() {
         return () => clearInterval(timer)
     }, [status, timeLeft])
 
-    const formatTime = (seconds) => {
+    const formatTime = (seconds: number) => {
         const m = Math.floor(seconds / 60)
         const s = seconds % 60
         return `${m}:${s < 10 ? '0' : ''}${s}`
@@ -97,7 +97,7 @@ function InterviewContent() {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 8000)
 
-            let pastQuestions = []
+            let pastQuestions: string[] = []
             try { pastQuestions = JSON.parse(localStorage.getItem('hiremind_past_questions') || '[]') } catch (e) { }
 
             const res = await fetch('/api/generate-questions', {
@@ -126,7 +126,7 @@ function InterviewContent() {
 
             setStatus('ready')
             setTimeout(() => speakQuestion(data.questions[0]), 800)
-        } catch (err) {
+        } catch (err: any) {
             const defaultFallback = [
                 `Can you tell me about your background and experience in ${roleTitle}?`,
                 `What's the most challenging project you've completed recently?`,
@@ -140,7 +140,7 @@ function InterviewContent() {
         }
     }
 
-    const fallbackBrowserTTS = useCallback((text) => {
+    const fallbackBrowserTTS = useCallback((text: string) => {
         if (!window.speechSynthesis) {
             setIsPlayingAudio(false)
             return
@@ -154,7 +154,7 @@ function InterviewContent() {
         window.speechSynthesis.speak(utterance)
     }, [])
 
-    const speakQuestion = useCallback(async (text) => {
+    const speakQuestion = useCallback(async (text: string) => {
         if (!audioEnabled || !text) return
         setIsPlayingAudio(true)
         try {
@@ -199,7 +199,7 @@ function InterviewContent() {
 
     const toggleRecording = () => isRecording ? stopRecording() : startRecording()
 
-    const transcribeAudio = async (blob) => {
+    const transcribeAudio = async (blob: Blob) => {
         setIsTranscribing(true)
         try {
             const formData = new FormData()
@@ -209,7 +209,7 @@ function InterviewContent() {
             if (!res.ok) throw new Error(data.error)
             setTranscript(data.text || '')
             setStatus('ready')
-        } catch (err) {
+        } catch (err: any) {
             setError(err.message || 'Transcription failed.')
             setStatus('ready')
         } finally { setIsTranscribing(false) }
@@ -236,7 +236,7 @@ function InterviewContent() {
                 try { await updateInterview(interviewId, { answers: newAns, scores: newSco, feedback: newFdb }) } catch { }
             }
             setIsEvaluating(false); goNext(newAns, newSco, newFdb)
-        } catch (err) {
+        } catch (err: any) {
             setError(err.message); setStatus('ready'); setIsEvaluating(false)
         }
     }

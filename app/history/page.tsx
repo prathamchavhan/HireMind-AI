@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { getAllInterviews } from '@/lib/firestore'
+import { getAllInterviews, Interview } from '@/lib/firestore'
 import { motion } from 'framer-motion'
 import {
     Chart as ChartJS,
@@ -12,6 +12,8 @@ import {
     LineElement,
     Tooltip,
     Filler,
+    ChartData,
+    ChartOptions
 } from 'chart.js'
 import { Line } from 'react-chartjs-2'
 import { ArrowLeft, Target, Award, ListChecks, TrendingUp } from 'lucide-react'
@@ -20,9 +22,9 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip,
 
 export default function HistoryPage() {
     const router = useRouter()
-    const [interviews, setInterviews] = useState([])
-    const [loading, setLoading] = useState(true)
-    const [error, setError] = useState(null)
+    const [interviews, setInterviews] = useState<Interview[]>([])
+    const [loading, setLoading] = useState<boolean>(true)
+    const [error, setError] = useState<string | null>(null)
 
     useEffect(() => {
         loadHistory()
@@ -50,7 +52,7 @@ export default function HistoryPage() {
         const labels = recentLimit.map((_, i) => `S-${i + 1}`)
         const scores = recentLimit.map(i => Math.round((i.averageScore || 0) * 10))
 
-        const cData = {
+        const cData: ChartData<'line'> = {
             labels,
             datasets: [{
                 fill: true,
@@ -69,13 +71,13 @@ export default function HistoryPage() {
             ? Math.round(interviews.reduce((a, i) => a + (i.averageScore || 0), 0) / interviews.length * 10)
             : 0
         const bestScore = interviews.length > 0
-            ? Math.max(...interviews.map(i => Math.round(i.averageScore * 10 || 0)))
+            ? Math.max(...interviews.map(i => Math.round((i.averageScore || 0) * 10)))
             : 0
 
         return { chartData: cData, avgScoreStr: `${avgScore}%`, bestScoreStr: `${bestScore}%`, completedCount: completed.length }
     }, [interviews])
 
-    const chartOptions = {
+    const chartOptions: ChartOptions<'line'> = {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
@@ -84,7 +86,7 @@ export default function HistoryPage() {
         },
         scales: {
             y: { display: false, min: 0, max: 100 },
-            x: { grid: { display: false, drawBorder: false }, ticks: { color: 'rgba(255,255,255,0.5)', font: { size: 10 } } },
+            x: { grid: { display: false }, ticks: { color: 'rgba(255,255,255,0.5)', font: { size: 10 } } },
         },
         interaction: { mode: 'index', intersect: false },
     }
@@ -164,7 +166,7 @@ export default function HistoryPage() {
 
                         {/* List */}
                         <motion.div initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.3, duration: 0.6 }} className="flex flex-col gap-4">
-                            {interviews.map((session, idx) => {
+                            {interviews.map((session: Interview) => {
                                 const pct = Math.round((session.averageScore || 0) * 10)
                                 const dateStr = session.createdAt?.toDate ? session.createdAt.toDate().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Unknown'
 

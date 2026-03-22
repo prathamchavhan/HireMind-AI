@@ -1,10 +1,7 @@
-import { initializeApp, getApps } from 'firebase/app'
-import { getFirestore } from 'firebase/firestore'
+import { initializeApp, getApps, FirebaseOptions, FirebaseApp } from 'firebase/app';
+import { getFirestore, Firestore } from 'firebase/firestore';
 
-// NEXT_PUBLIC_ vars work on both client and server.
-// Non-prefixed vars work only on the server (API routes).
-// We read NEXT_PUBLIC_ first so this file works universally.
-const firebaseConfig = {
+const firebaseConfig: FirebaseOptions = {
     apiKey:
         process.env.NEXT_PUBLIC_FIREBASE_API_KEY ||
         process.env.FIREBASE_API_KEY,
@@ -26,11 +23,11 @@ const firebaseConfig = {
     measurementId:
         process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID ||
         process.env.FIREBASE_MEASUREMENT_ID,
-}
+};
 
 // Avoid re-initializing Firebase on Next.js hot-reloads
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0]
+const app: FirebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 
-export const db = getFirestore(app)
+export const db: Firestore = getFirestore(app);
 
-export default app
+export default app;

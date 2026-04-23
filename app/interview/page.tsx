@@ -52,6 +52,7 @@ function InterviewContent() {
 
     const mediaRecorderRef = useRef<MediaRecorder | null>(null)
     const audioChunksRef = useRef<Blob[]>([])
+    const audioRef = useRef<HTMLAudioElement | null>(null)
     const videoRef = useRef<HTMLVideoElement>(null)
     const streamRef = useRef<MediaStream | null>(null)
     const userVideoRef = useRef<HTMLVideoElement>(null)
@@ -89,6 +90,8 @@ function InterviewContent() {
             if (userStreamRef.current) userStreamRef.current.getTracks().forEach(t => t.stop())
         }
     }, [])
+
+
 
     const loadQuestions = async () => {
         setStatus('loading')
@@ -145,49 +148,98 @@ function InterviewContent() {
             setIsPlayingAudio(false)
             return
         }
-        const utterance = new SpeechSynthesisUtterance(text)
-        const voices = window.speechSynthesis.getVoices()
-        const voice = voices.find(v => v.lang.startsWith('en') && v.name.includes('Female')) || voices.find(v => v.lang.startsWith('en'))
-        if (voice) utterance.voice = voice
-        utterance.onend = () => setIsPlayingAudio(false)
-        utterance.onerror = () => setIsPlayingAudio(false)
-        window.speechSynthesis.speak(utterance)
+        try {
+            window.speechSynthesis.cancel()
+            const utterance = new SpeechSynthesisUtterance(text)
+            const voices = window.speechSynthesis.getVoices()
+            const voice = voices.find(v => v.lang.startsWith('en') && v.name.includes('Female')) || voices.find(v => v.lang.startsWith('en'))
+            if (voice) utterance.voice = voice
+            utterance.onend = () => setIsPlayingAudio(false)
+            utterance.onerror = () => setIsPlayingAudio(false)
+            window.speechSynthesis.speak(utterance)
+            // Safety: if TTS doesn't fire events within 30s, force-reset
+            setTimeout(() => setIsPlayingAudio(false), 30000)
+        } catch {
+            setIsPlayingAudio(false)
+        }
     }, [])
 
     const speakQuestion = useCallback(async (text: string) => {
         if (!audioEnabled || !text) return
         setIsPlayingAudio(true)
+        // Safety timeout: never let isPlayingAudio stay true for more than 60s
+        const safetyTimer = setTimeout(() => setIsPlayingAudio(false), 60000)
         try {
+            const controller = new AbortController()
+            const fetchTimeout = setTimeout(() => controller.abort(), 10000)
             const res = await fetch('/api/text-to-speech', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text })
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }),
+                signal: controller.signal
             })
+            clearTimeout(fetchTimeout)
             if (!res.ok) throw new Error('TTS failed')
             const blob = await res.blob()
             const url = URL.createObjectURL(blob)
+            if (audioRef.current) {
+                audioRef.current.pause()
+            }
             const audio = new Audio(url)
-            audio.onended = () => { setIsPlayingAudio(false); URL.revokeObjectURL(url) }
-            audio.onerror = () => fallbackBrowserTTS(text)
-            audio.play().catch(() => fallbackBrowserTTS(text))
-        } catch { fallbackBrowserTTS(text) }
+            audioRef.current = audio
+            audio.onended = () => { clearTimeout(safetyTimer); setIsPlayingAudio(false); URL.revokeObjectURL(url) }
+            audio.onerror = () => { clearTimeout(safetyTimer); fallbackBrowserTTS(text) }
+            audio.play().catch(() => { clearTimeout(safetyTimer); fallbackBrowserTTS(text) })
+        } catch {
+            clearTimeout(safetyTimer)
+            fallbackBrowserTTS(text)
+        }
     }, [audioEnabled, fallbackBrowserTTS])
 
     const startRecording = async () => {
         setError(null); setTranscript('')
+        // Force reset isPlayingAudio in case it's stuck
+        setIsPlayingAudio(false)
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
             streamRef.current = stream
             audioChunksRef.current = []
-            const mediaRecorder = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm' })
+            // Try multiple MIME types for broader browser compatibility
+            let mimeType = 'audio/webm'
+            if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+                mimeType = 'audio/webm;codecs=opus'
+            } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+                mimeType = 'audio/webm'
+            } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+                mimeType = 'audio/mp4'
+            } else if (MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')) {
+                mimeType = 'audio/ogg;codecs=opus'
+            }
+            const mediaRecorder = new MediaRecorder(stream, { mimeType })
             mediaRecorderRef.current = mediaRecorder
             mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data) }
-            mediaRecorder.onstop = async () => {
-                const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
+            mediaRecorder.onerror = () => {
+                setError('Recording error occurred. Please try again.')
+                setIsRecording(false)
+                setStatus('ready')
                 stream.getTracks().forEach(t => t.stop())
+            }
+            mediaRecorder.onstop = async () => {
+                const recordedType = mediaRecorder.mimeType || mimeType
+                const blob = new Blob(audioChunksRef.current, { type: recordedType })
+                stream.getTracks().forEach(t => t.stop())
+                if (blob.size < 1000) {
+                    setError('Recording too short. Please hold the mic button longer and speak clearly.')
+                    setStatus('ready')
+                    return
+                }
                 await transcribeAudio(blob)
             }
             mediaRecorder.start(250)
             setIsRecording(true); setStatus('recording')
-        } catch (err) { setError('Microphone access denied.') }
+        } catch (err: any) {
+            console.error('Microphone error:', err)
+            setError('Microphone access denied. Please allow microphone permissions and try again.')
+            setStatus('ready')
+        }
     }
 
     const stopRecording = () => {
@@ -202,15 +254,23 @@ function InterviewContent() {
     const transcribeAudio = async (blob: Blob) => {
         setIsTranscribing(true)
         try {
+            // Determine file extension from MIME type
+            const ext = blob.type.includes('mp4') ? 'mp4' : blob.type.includes('ogg') ? 'ogg' : 'webm'
             const formData = new FormData()
-            formData.append('audio', blob, 'recording.webm')
+            formData.append('audio', blob, `recording.${ext}`)
             const res = await fetch('/api/speech-to-text', { method: 'POST', body: formData })
             const data = await res.json()
             if (!res.ok) throw new Error(data.error)
-            setTranscript(data.text || '')
+            if (!data.text || data.text.trim() === '') {
+                setError('No speech detected. Please speak clearly and try again.')
+                setStatus('ready')
+                return
+            }
+            setTranscript(data.text)
             setStatus('ready')
         } catch (err: any) {
-            setError(err.message || 'Transcription failed.')
+            console.error('Transcription error:', err)
+            setError(err.message || 'Transcription failed. Please try again.')
             setStatus('ready')
         } finally { setIsTranscribing(false) }
     }
@@ -335,12 +395,12 @@ function InterviewContent() {
                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6 }} className="border border-white/20 p-8">
                     <div className="flex flex-col items-center gap-6">
                         <div className="h-12 w-full max-w-sm flex items-center justify-center">
-                            {isRecording ? <AudioWave isRecording={true} /> : <div className="text-xs uppercase tracking-widest text-white/30">Awaiting audio input...</div>}
+                            {isRecording ? <AudioWave isRecording={true} /> : isTranscribing ? <div className="text-xs uppercase tracking-widest text-white/50 animate-pulse">Processing your response...</div> : <div className="text-xs uppercase tracking-widest text-white/30">{isPlayingAudio ? 'Listen to the question...' : 'Tap the mic to answer'}</div>}
                         </div>
 
                         <button
                             onClick={toggleRecording}
-                            disabled={isTranscribing || isEvaluating || isSaving || isPlayingAudio}
+                            disabled={isTranscribing || isEvaluating || isSaving}
                             className={`
                                 w-16 h-16 rounded-full border flex items-center justify-center transition-all duration-300
                                 ${isRecording ? 'border-white bg-white text-black scale-90' : 'border-white/50 hover:border-white text-white hover:scale-110'}
@@ -351,8 +411,15 @@ function InterviewContent() {
                         </button>
 
                         <div className="text-[10px] uppercase tracking-widest font-mono text-white/50">
-                            {isRecording ? 'Recording // Tap to finalize' : isTranscribing ? 'Parsing semantics...' : isEvaluating ? 'Evaluating synthesis...' : 'Tap Mic to Respond'}
+                            {isRecording ? 'Recording // Tap to finalize' : isTranscribing ? 'Parsing semantics...' : isEvaluating ? 'Evaluating synthesis...' : isPlayingAudio ? 'Question playing...' : 'Tap Mic to Respond'}
                         </div>
+
+                        {error && (
+                            <div className="mt-2 px-4 py-2 border border-red-500/30 bg-red-500/10 text-red-400 text-xs text-center max-w-sm">
+                                {error}
+                                <button onClick={() => setError(null)} className="ml-3 text-white/50 hover:text-white underline">Dismiss</button>
+                            </div>
+                        )}
                     </div>
 
                     <AnimatePresence>
@@ -367,7 +434,7 @@ function InterviewContent() {
                                     <button onClick={() => { setTranscript(''); setError(null) }} disabled={isEvaluating} className="border border-white/20 p-4 text-xs font-semibold uppercase tracking-widest hover:bg-white/5 transition-colors text-center">
                                         Discard & Retry
                                     </button>
-                                    <button onClick={evaluateAnswer} disabled={isEvaluating} className="lg:col-span-2 bg-white text-black p-4 text-xs font-bold uppercase tracking-widest hover:opacity-90 transition-opacity flex items-center justify-center gap-2">
+                                    <button onClick={evaluateAnswer} disabled={isEvaluating} className="lg:col-span-2 bg-white text-black p-4 text-xs font-bold uppercase tracking-widest hover:bg-gray-200 transition-all shadow-[0_0_15px_rgba(255,255,255,0.6)] ring-2 ring-white ring-offset-2 ring-offset-black animate-[pulse_2s_ease-in-out_infinite] flex items-center justify-center gap-2">
                                         {isEvaluating ? 'Compiling Analysis...' : currentIdx === questions.length - 1 ? 'Finalize Assesment' : 'Submit & Advance'}
                                         {!isEvaluating && <ArrowRight className="w-4 h-4" />}
                                     </button>
@@ -378,7 +445,7 @@ function InterviewContent() {
 
                     {!transcript && !isRecording && !isTranscribing && (
                         <div className="mt-8 flex justify-center">
-                            <button onClick={() => goNext()} className="text-[10px] uppercase tracking-widest text-white/40 hover:text-white flex items-center gap-2 transition-colors">
+                            <button onClick={() => goNext()} className="text-[11px] font-bold uppercase tracking-widest text-white hover:text-black flex items-center gap-2 transition-all px-4 py-2 border border-white hover:bg-white hover:shadow-[0_0_15px_rgba(255,255,255,0.6)] ring-1 ring-white/50 hover:ring-white ring-offset-2 ring-offset-black mt-4">
                                 <SkipForward className="w-3 h-3" /> Bypass Question
                             </button>
                         </div>
